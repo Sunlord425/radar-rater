@@ -1,18 +1,26 @@
 import { useState } from "react";
-import type { Collection, Rating } from "../types";
+import type { Collection, Item, Rating } from "../types";
 
 interface Props {
   collection: Collection;
+  initialItem?: Item;
   onSubmit: (name: string, description: string | null, ratings: Rating[]) => void;
   onCancel: () => void;
 }
 
-export function NewItemForm({ collection, onSubmit, onCancel }: Props) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+export function NewItemForm({ collection, initialItem, onSubmit, onCancel }: Props) {
+  const [name, setName] = useState(initialItem?.name ?? "");
+  const [description, setDescription] = useState(initialItem?.description ?? "");
   const [values, setValues] = useState<Record<string, number>>(
-    Object.fromEntries(collection.scales.map((s) => [s.id, 5]))
+    Object.fromEntries(
+      collection.scales.map((s) => [
+        s.id,
+        initialItem?.ratings.find((r) => r.scale_id === s.id)?.value ?? 5,
+      ])
+    )
   );
+
+  const isEdit = !!initialItem;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +35,7 @@ export function NewItemForm({ collection, onSubmit, onCancel }: Props) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>New Item</h2>
+        <h2>{isEdit ? "Edit Item" : "New Item"}</h2>
         <form onSubmit={handleSubmit} style={{ display: "contents" }}>
           <div className="form-field">
             <label>Name</label>
@@ -75,7 +83,7 @@ export function NewItemForm({ collection, onSubmit, onCancel }: Props) {
               Cancel
             </button>
             <button type="submit" className="primary">
-              Add Item
+              {isEdit ? "Save" : "Add Item"}
             </button>
           </div>
         </form>

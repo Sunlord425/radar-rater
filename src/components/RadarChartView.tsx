@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, Tooltip } from "recharts";
 import type { Collection, Item } from "../types";
 
@@ -7,8 +8,12 @@ function useSize(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     if (!ref.current) return;
     const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ width, height });
+      flushSync(() => {
+        setSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      });
     });
     observer.observe(ref.current);
     return () => observer.disconnect();
@@ -65,6 +70,7 @@ export function RadarChartView({ collection, items }: Props) {
                   fill={COLORS[i % COLORS.length]}
                   fillOpacity={0.15}
                   strokeWidth={2}
+                  isAnimationActive={false}
                 />
               ))}
             </RadarChart>

@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Collection, Item, Rating } from "../types";
+import { useToast } from "../context/ToastContext";
+import type { Collection, Item, Rating, SimilarityResult } from "../types";
 import { NewItemForm } from "./NewItemForm";
 import { RadarChartView } from "./RadarChartView";
+import { SimilarityView } from "./SimilarityView";
+
+type PanelMode = "compare" | "similarity";
 
 interface Props {
   collection: Collection;
@@ -10,14 +14,29 @@ interface Props {
 }
 
 export function CollectionView({ collection, onBack }: Props) {
+  const { addToast } = useToast();
   const [items, setItems] = useState<Item[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [showNewItem, setShowNewItem] = useState(false);
+  const [panelMode, setPanelMode] = useState<PanelMode>("compare");
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [similarityResults, setSimilarityResults] = useState<SimilarityResult[]>([]);
 
   useEffect(() => {
-    api.listItems(collection.id).then(setItems);
+    api.listItems(collection.id).then(setItems).catch((e) => addToast(e));
     setSelectedIds(new Set());
+    setAnchorId(null);
+    setSimilarityResults([]);
   }, [collection.id]);
+
+  useEffect(() => {
+    if (panelMode !== "similarity" || !anchorId) return;
+    api
+      .rankBySimilarity(collection.id, anchorId)
+      .then(setSimilarityResults)
+      .catch((e) => addToast(e));
+  }, [panelMode, anchorId, collection.id]);
 
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => {
@@ -27,11 +46,22 @@ export function CollectionView({ collection, onBack }: Props) {
       return next;
     });
 
-  const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
+  const handleItemClick = (id: string) => {
+    if (panelMode === "compare") toggleSelect(id);
+    else setAnchorId(id);
+  };
+
+  const handleDeleteItem = async (item: Item, e: React.MouseEvent) => {
     e.stopPropagation();
-    await api.deleteItem(id);
-    setItems((prev) => prev.filter((i) => i.id !== id));
-    setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    try {
+      await api.deleteItem(item.id);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+      setSelectedIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
+      if (anchorId === item.id) setAnchorId(null);
+    } catch (e) {
+      addToast(String(e));
+    }
   };
 
   const handleCreateItem = async (
@@ -39,13 +69,38 @@ export function CollectionView({ collection, onBack }: Props) {
     description: string | null,
     ratings: Rating[]
   ) => {
-    const item = await api.createItem(collection.id, name, description, ratings);
-    setItems((prev) => [...prev, item]);
-    setSelectedIds((prev) => new Set(prev).add(item.id));
-    setShowNewItem(false);
+    try {
+      const item = await api.createItem(collection.id, name, description, ratings);
+      setItems((prev) => [...prev, item]);
+      if (panelMode === "compare") setSelectedIds((prev) => new Set(prev).add(item.id));
+      setShowNewItem(false);
+    } catch (e) {
+      addToast(String(e));
+    }
+  };
+
+  const handleUpdateItem = async (
+    name: string,
+    description: string | null,
+    ratings: Rating[]
+  ) => {
+    if (!editingItem) return;
+    try {
+      const updated = await api.updateItem(editingItem.id, name, description, ratings);
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+      if (anchorId === editingItem.id) {
+        api.rankBySimilarity(collection.id, anchorId).then(setSimilarityResults).catch((e) => addToast(e));
+      }
+      setEditingItem(null);
+    } catch (e) {
+      addToast(String(e));
+    }
   };
 
   const selectedItems = items.filter((i) => selectedIds.has(i.id));
+  const anchorItem = items.find((i) => i.id === anchorId) ?? null;
+  const isActive = (id: string) =>
+    panelMode === "compare" ? selectedIds.has(id) : anchorId === id;
 
   return (
     <>
@@ -72,15 +127,25 @@ export function CollectionView({ collection, onBack }: Props) {
             {items.map((item) => (
               <div
                 key={item.id}
-                className={`item-card${selectedIds.has(item.id) ? " selected" : ""}`}
-                onClick={() => toggleSelect(item.id)}
+                className={`item-card${isActive(item.id) ? " selected" : ""}`}
+                onClick={() => handleItemClick(item.id)}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(item.id)}
-                  onChange={() => toggleSelect(item.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
+                {panelMode === "compare" ? (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleSelect(item.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <input
+                    type="radio"
+                    name="anchor"
+                    checked={anchorId === item.id}
+                    onChange={() => setAnchorId(item.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
                 <div className="item-info">
                   <div className="item-name">{item.name}</div>
                   {item.description && (
@@ -88,8 +153,16 @@ export function CollectionView({ collection, onBack }: Props) {
                   )}
                 </div>
                 <button
+                  className="icon-btn"
+                  title="Edit"
+                  onClick={(e) => { e.stopPropagation(); setEditingItem(item); }}
+                >
+                  ✎
+                </button>
+                <button
                   className="danger-btn"
-                  onClick={(e) => handleDeleteItem(item.id, e)}
+                  title="Delete"
+                  onClick={(e) => handleDeleteItem(item, e)}
                 >
                   ✕
                 </button>
@@ -98,7 +171,30 @@ export function CollectionView({ collection, onBack }: Props) {
           </div>
 
           <div className="chart-panel">
-            <RadarChartView collection={collection} items={selectedItems} />
+            <div className="panel-tabs">
+              <button
+                className={`tab${panelMode === "compare" ? " active" : ""}`}
+                onClick={() => setPanelMode("compare")}
+              >
+                Compare
+              </button>
+              <button
+                className={`tab${panelMode === "similarity" ? " active" : ""}`}
+                onClick={() => setPanelMode("similarity")}
+              >
+                Similarity
+              </button>
+            </div>
+
+            {panelMode === "compare" ? (
+              <RadarChartView collection={collection} items={selectedItems} />
+            ) : anchorItem ? (
+              <SimilarityView anchor={anchorItem} results={similarityResults} />
+            ) : (
+              <div className="chart-empty">
+                Select an item from the list to rank all others by similarity.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -108,6 +204,14 @@ export function CollectionView({ collection, onBack }: Props) {
           collection={collection}
           onSubmit={handleCreateItem}
           onCancel={() => setShowNewItem(false)}
+        />
+      )}
+      {editingItem && (
+        <NewItemForm
+          collection={collection}
+          initialItem={editingItem}
+          onSubmit={handleUpdateItem}
+          onCancel={() => setEditingItem(null)}
         />
       )}
     </>
