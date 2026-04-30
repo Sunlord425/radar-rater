@@ -14,6 +14,7 @@ pub struct Collection {
     pub description: Option<String>,
     pub created_at: String,
     pub scales: Vec<Scale>,
+    pub item_count: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -29,4 +30,11 @@ pub struct Item {
     pub description: Option<String>,
     pub created_at: String,
     pub ratings: Vec<Rating>,
+}
+
+#[derive(Serialize)]
+pub struct SimilarityResult {
+    pub item_id: String,
+    pub item_name: String,
+    pub similarity: f64,
 }

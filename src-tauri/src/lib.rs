@@ -33,6 +33,13 @@ pub fn run() {
             commands::create_item,
             commands::list_items,
             commands::delete_item,
+            commands::update_item,
+            commands::update_collection,
+            commands::rank_by_similarity,
+            commands::rename_scale,
+            commands::delete_scale,
+            commands::reorder_scales,
+            commands::add_scale,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

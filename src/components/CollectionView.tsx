@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useToast } from "../context/ToastContext";
-import type { Collection, Item, Rating, SimilarityResult } from "../types";
+import type { Collection, Item, Rating, Scale, SimilarityResult } from "../types";
 import { NewItemForm } from "./NewItemForm";
+import { ManageScalesModal } from "./ManageScalesModal";
 import { RadarChartView } from "./RadarChartView";
 import { SimilarityView } from "./SimilarityView";
 
@@ -15,10 +16,13 @@ interface Props {
 
 export function CollectionView({ collection, onBack }: Props) {
   const { addToast } = useToast();
+  const [scales, setScales] = useState<Scale[]>(collection.scales);
   const [items, setItems] = useState<Item[]>([]);
+  const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [showNewItem, setShowNewItem] = useState(false);
+  const [showManageScales, setShowManageScales] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("compare");
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [similarityResults, setSimilarityResults] = useState<SimilarityResult[]>([]);
@@ -97,7 +101,12 @@ export function CollectionView({ collection, onBack }: Props) {
     }
   };
 
-  const selectedItems = items.filter((i) => selectedIds.has(i.id));
+  const collectionWithScales = { ...collection, scales };
+  const filteredItems = search.trim()
+    ? items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()) ||
+        i.description?.toLowerCase().includes(search.toLowerCase()))
+    : items;
+  const selectedItems = filteredItems.filter((i) => selectedIds.has(i.id));
   const anchorItem = items.find((i) => i.id === anchorId) ?? null;
   const isActive = (id: string) =>
     panelMode === "compare" ? selectedIds.has(id) : anchorId === id;
@@ -108,9 +117,12 @@ export function CollectionView({ collection, onBack }: Props) {
         <button className="back" onClick={onBack}>← Collections</button>
         <h1>{collection.name}</h1>
         <span style={{ fontSize: "0.8rem", color: "var(--fg-muted)" }}>
-          {collection.scales.map((s) => s.name).join(" · ")}
+          {scales.map((s) => s.name).join(" · ")}
         </span>
         <div className="toolbar-spacer" />
+        <button className="ghost" onClick={() => setShowManageScales(true)}>
+          Scales
+        </button>
         <button className="primary" onClick={() => setShowNewItem(true)}>
           + Add Item
         </button>
@@ -119,12 +131,19 @@ export function CollectionView({ collection, onBack }: Props) {
       <div className="content">
         <div className="collection-view">
           <div className="items-panel">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search items…"
+              style={{ flexShrink: 0 }}
+            />
             {items.length === 0 && (
               <p style={{ color: "var(--fg-muted)", fontSize: "0.9rem" }}>
                 No items yet. Add one to get started.
               </p>
             )}
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <div
                 key={item.id}
                 className={`item-card${isActive(item.id) ? " selected" : ""}`}
@@ -187,7 +206,7 @@ export function CollectionView({ collection, onBack }: Props) {
             </div>
 
             {panelMode === "compare" ? (
-              <RadarChartView collection={collection} items={selectedItems} />
+              <RadarChartView collection={collectionWithScales} items={selectedItems} />
             ) : anchorItem ? (
               <SimilarityView anchor={anchorItem} results={similarityResults} />
             ) : (
@@ -201,17 +220,25 @@ export function CollectionView({ collection, onBack }: Props) {
 
       {showNewItem && (
         <NewItemForm
-          collection={collection}
+          collection={collectionWithScales}
           onSubmit={handleCreateItem}
           onCancel={() => setShowNewItem(false)}
         />
       )}
       {editingItem && (
         <NewItemForm
-          collection={collection}
+          collection={collectionWithScales}
           initialItem={editingItem}
           onSubmit={handleUpdateItem}
           onCancel={() => setEditingItem(null)}
+        />
+      )}
+      {showManageScales && (
+        <ManageScalesModal
+          collectionId={collection.id}
+          initialScales={scales}
+          onSave={(updated) => { setScales(updated); setShowManageScales(false); }}
+          onCancel={() => setShowManageScales(false)}
         />
       )}
     </>

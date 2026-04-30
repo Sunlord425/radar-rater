@@ -10,6 +10,7 @@ export interface Collection {
   description: string | null;
   created_at: string;
   scales: Scale[];
+  item_count: number;
 }
 
 export interface Rating {
@@ -23,4 +24,10 @@ export interface Item {
   description: string | null;
   created_at: string;
   ratings: Rating[];
+}
+
+export interface SimilarityResult {
+  item_id: string;
+  item_name: string;
+  similarity: number;
 }

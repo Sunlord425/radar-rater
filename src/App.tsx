@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { ToastProvider, useToast } from "./context/ToastContext";
 import type { Collection } from "./types";
 import { NewCollectionForm } from "./components/NewCollectionForm";
+import { EditCollectionForm } from "./components/EditCollectionForm";
 import { CollectionView } from "./components/CollectionView";
 import "./App.css";
 
 function CollectionList({
   collections,
   onSelect,
+  onEdit,
   onDelete,
   onNew,
 }: {
   collections: Collection[];
   onSelect: (c: Collection) => void;
-  onDelete: (id: string) => void;
+  onEdit: (c: Collection) => void;
+  onDelete: (c: Collection) => void;
   onNew: () => void;
 }) {
   return (
@@ -36,11 +40,20 @@ function CollectionList({
               <div key={c.id} className="collection-card" onClick={() => onSelect(c)}>
                 <h3>{c.name}</h3>
                 {c.description && <p className="meta">{c.description}</p>}
-                <p className="meta">{c.scales.length} scale{c.scales.length !== 1 ? "s" : ""}</p>
+                <p className="meta">
+                  {c.scales.length} scale{c.scales.length !== 1 ? "s" : ""} · {c.item_count} item{c.item_count !== 1 ? "s" : ""}
+                </p>
                 <div className="card-footer">
                   <button
+                    className="icon-btn"
+                    title="Edit"
+                    onClick={(e) => { e.stopPropagation(); onEdit(c); }}
+                  >
+                    ✎
+                  </button>
+                  <button
                     className="danger-btn"
-                    onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
+                    onClick={(e) => { e.stopPropagation(); onDelete(c); }}
                   >
                     Delete
                   </button>
@@ -54,28 +67,48 @@ function CollectionList({
   );
 }
 
-export default function App() {
+function AppInner() {
+  const { addToast } = useToast();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selected, setSelected] = useState<Collection | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
 
   useEffect(() => {
-    api.listCollections().then(setCollections);
+    api.listCollections().then(setCollections).catch((e) => addToast(String(e)));
   }, []);
 
-  const handleCreate = async (
-    name: string,
-    description: string | null,
-    scaleNames: string[]
-  ) => {
-    const c = await api.createCollection(name, description, scaleNames);
-    setCollections((prev) => [...prev, c]);
-    setShowNew(false);
+  const handleCreate = async (name: string, description: string | null, scaleNames: string[]) => {
+    try {
+      const c = await api.createCollection(name, description, scaleNames);
+      setCollections((prev) => [...prev, c]);
+      setShowNew(false);
+    } catch (e) {
+      addToast(String(e));
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    await api.deleteCollection(id);
-    setCollections((prev) => prev.filter((c) => c.id !== id));
+  const handleUpdate = async (name: string, description: string | null) => {
+    if (!editingCollection) return;
+    try {
+      await api.updateCollection(editingCollection.id, name, description);
+      setCollections((prev) =>
+        prev.map((c) => c.id === editingCollection.id ? { ...c, name, description } : c)
+      );
+      setEditingCollection(null);
+    } catch (e) {
+      addToast(String(e));
+    }
+  };
+
+  const handleDelete = async (c: Collection) => {
+    if (!window.confirm(`Delete "${c.name}" and all its items? This cannot be undone.`)) return;
+    try {
+      await api.deleteCollection(c.id);
+      setCollections((prev) => prev.filter((x) => x.id !== c.id));
+    } catch (e) {
+      addToast(String(e));
+    }
   };
 
   return (
@@ -86,6 +119,7 @@ export default function App() {
         <CollectionList
           collections={collections}
           onSelect={setSelected}
+          onEdit={setEditingCollection}
           onDelete={handleDelete}
           onNew={() => setShowNew(true)}
         />
@@ -93,6 +127,21 @@ export default function App() {
       {showNew && (
         <NewCollectionForm onSubmit={handleCreate} onCancel={() => setShowNew(false)} />
       )}
+      {editingCollection && (
+        <EditCollectionForm
+          collection={editingCollection}
+          onSubmit={handleUpdate}
+          onCancel={() => setEditingCollection(null)}
+        />
+      )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
   );
 }
